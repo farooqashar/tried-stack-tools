@@ -1,0 +1,104 @@
+---
+// One dot per tool. Each slice is a category; tried tools sit on the inner
+// ring and tools on the radar sit on the outer ring.
+const { tools, categories } = Astro.props;
+
+const SIZE = 720;
+const C = SIZE / 2;
+const INNER = [70, 175];
+const OUTER = [195, 290];
+const LABEL_R = 312;
+const GAP = 0.035; // radians of empty space on each side of a slice
+
+const total = tools.length;
+const minShare = 0.045;
+const raw = categories.map((c) => Math.max(tools.filter((t) => t.category === c).length / total, minShare));
+const sum = raw.reduce((a, b) => a + b, 0);
+
+const polar = (r, a) => [C + r * Math.cos(a), C + r * Math.sin(a)];
+const fmt = (n) => n.toFixed(1);
+
+function arcPath(r0, r1, a0, a1) {
+  const [x0, y0] = polar(r1, a0);
+  const [x1, y1] = polar(r1, a1);
+  const [x2, y2] = polar(r0, a1);
+  const [x3, y3] = polar(r0, a0);
+  const large = a1 - a0 > Math.PI ? 1 : 0;
+  return `M${fmt(x0)},${fmt(y0)} A${r1},${r1} 0 ${large} 1 ${fmt(x1)},${fmt(y1)} L${fmt(x2)},${fmt(y2)} A${r0},${r0} 0 ${large} 0 ${fmt(x3)},${fmt(y3)} Z`;
+}
+
+// Spread n dots across a band without them lining up.
+function place(items, [r0, r1], a0, a1) {
+  const n = items.length;
+  return items.map((t, i) => {
+    const frac = (i + 0.5) / n;
+    const a = a0 + GAP + frac * (a1 - a0 - 2 * GAP);
+    const jitter = ((i * 0.6180339887 + 0.31) % 1);
+    const r = r0 + 14 + jitter * (r1 - r0 - 28);
+    const [x, y] = polar(r, a);
+    return { ...t, x, y };
+  });
+}
+
+let angle = -Math.PI / 2;
+const slices = categories.map((cat, i) => {
+  const span = (raw[i] / sum) * Math.PI * 2;
+  const a0 = angle;
+  const a1 = angle + span;
+  angle = a1;
+  const inCat = tools.filter((t) => t.category === cat);
+  const mid = (a0 + a1) / 2;
+  const [lx, ly] = polar(LABEL_R, mid);
+  const cos = Math.cos(mid);
+  return {
+    cat,
+    a0,
+    a1,
+    divider: [polar(INNER[0] - 10, a0), polar(OUTER[1] + 6, a0)],
+    hit: arcPath(INNER[0] - 10, OUTER[1] + 6, a0, a1),
+    label: { x: lx, y: ly, anchor: cos > 0.2 ? "start" : cos < -0.2 ? "end" : "middle" },
+    dots: [
+      ...place(inCat.filter((t) => t.tried), INNER, a0, a1),
+      ...place(inCat.filter((t) => !t.tried), OUTER, a0, a1),
+    ],
+  };
+});
+---
+
+<figure class="radar" aria-label="Radar of every tool, grouped by category">
+  <svg viewBox={`-60 0 ${SIZE + 120} ${SIZE}`} role="img">
+    <title>Tools by category: tried on the inner ring, on my radar on the outer ring</title>
+    <circle class="ring ring-outer" cx={C} cy={C} r={OUTER[1] + 6} />
+    <circle class="ring" cx={C} cy={C} r={(INNER[1] + OUTER[0]) / 2} />
+    <circle class="ring" cx={C} cy={C} r={INNER[0] - 10} />
+    <g class="sweep" aria-hidden="true">
+      <path d={arcPath(INNER[0] - 10, OUTER[1] + 6, -Math.PI / 2, -Math.PI / 2 + 0.55)} />
+      <animateTransform attributeName="transform" type="rotate" from={`0 ${C} ${C}`} to={`360 ${C} ${C}`} dur="10s" repeatCount="indefinite" />
+    </g>
+    {slices.map((s) => (
+      <g class="slice" data-category={s.cat}>
+        <path class="slice-hit" d={s.hit} />
+        <line
+          class="divider"
+          x1={fmt(s.divider[0][0])}
+          y1={fmt(s.divider[0][1])}
+          x2={fmt(s.divider[1][0])}
+          y2={fmt(s.divider[1][1])}
+        />
+        <text class="slice-label" x={fmt(s.label.x)} y={fmt(s.label.y)} text-anchor={s.label.anchor} dominant-baseline="middle">
+          {s.cat}
+        </text>
+        {s.dots.map((d) => (
+          <a href={`#tool-${d.id}`} class="blip-link" data-id={d.id}>
+            <circle class={d.tried ? "blip tried" : "blip radar-blip"} cx={fmt(d.x)} cy={fmt(d.y)} r="6">
+              <title>{d.name}{d.tried ? " (tried)" : " (on my radar)"}</title>
+            </circle>
+          </a>
+        ))}
+      </g>
+    ))}
+    <text class="center-count" x={C} y={C - 6} text-anchor="middle" dominant-baseline="middle">{tools.filter((t) => t.tried).length}</text>
+    <text class="center-label" x={C} y={C + 22} text-anchor="middle" dominant-baseline="middle">tried</text>
+  </svg>
+  <figcaption class="readout" aria-live="polite"></figcaption>
+</figure>

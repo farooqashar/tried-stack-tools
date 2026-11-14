@@ -1,0 +1,437 @@
+---
+import Radar from "../components/Radar.astro";
+import { loadTools, categoriesFor } from "../lib/tools.js";
+
+const tools = loadTools();
+const categories = categoriesFor(tools);
+const triedCount = tools.filter((t) => t.tried).length;
+const radarCount = tools.length - triedCount;
+const updated = new Date().toLocaleDateString("en-US", {
+  month: "long",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "America/New_York",
+});
+const favicon = (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ashar's radar: AI tools tried and on my list</title>
+    <meta
+      name="description"
+      content={`${triedCount} AI tools and products Ashar Farooq has tried, and ${radarCount} more on his radar.`}
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header class="intro">
+      <div class="intro-text">
+        <p class="byline"><a href="https://ashar.vercel.app">Ashar Farooq</a></p>
+        <h1>What's on my radar</h1>
+        <p class="lede">
+          A running list of AI tools, models and platforms. I've tried {triedCount} of them,
+          and {radarCount} more are on my list to try.
+        </p>
+        <ul class="legend">
+          <li><span class="mark tried"></span>Tried, inner ring</li>
+          <li><span class="mark radar-blip"></span>On my radar, outer ring</li>
+        </ul>
+        <p class="hint">Point at a dot to see the tool. Click one to jump to it.</p>
+      </div>
+      <Radar tools={tools} categories={categories} />
+    </header>
+
+    <nav class="controls" aria-label="Filter tools">
+      <label class="search">
+        <span class="visually-hidden">Search tools</span>
+        <input id="q" type="search" placeholder="Search by name, purpose or note" autocomplete="off" />
+      </label>
+      <div class="status" role="radiogroup" aria-label="Show">
+        <button type="button" role="radio" aria-checked="true" data-status="all">All {tools.length}</button>
+        <button type="button" role="radio" aria-checked="false" data-status="tried">Tried {triedCount}</button>
+        <button type="button" role="radio" aria-checked="false" data-status="radar">On my radar {radarCount}</button>
+      </div>
+      <div class="cats" aria-label="Categories">
+        {categories.map((c) => (
+          <button type="button" class="cat" aria-pressed="false" data-category={c}>{c}</button>
+        ))}
+      </div>
+    </nav>
+
+    <main id="list">
+      {categories.map((cat) => {
+        const items = tools
+          .filter((t) => t.category === cat)
+          .sort((a, b) => Number(b.tried) - Number(a.tried) || a.name.localeCompare(b.name));
+        const tried = items.filter((t) => t.tried).length;
+        return (
+          <section class="group" data-category={cat}>
+            <h2>
+              {cat}
+              <span class="group-count">{tried} of {items.length} tried</span>
+            </h2>
+            <ul class="rows">
+              {items.map((t) => (
+                <li
+                  class="row"
+                  id={`tool-${t.id}`}
+                  data-id={t.id}
+                  data-tried={t.tried ? "1" : "0"}
+                  data-search={`${t.name} ${t.purpose} ${t.notes} ${t.domain}`.toLowerCase()}
+                >
+                  <span class={t.tried ? "mark tried" : "mark radar-blip"} title={t.tried ? "Tried" : "On my radar"}></span>
+                  <span class="logo" aria-hidden="true">
+                    <span class="initial">{t.name.charAt(0)}</span>
+                    {t.domain && (
+                      <img src={favicon(t.domain)} alt="" width="20" height="20" loading="lazy" onerror="this.remove()" />
+                    )}
+                  </span>
+                  <span class="name">
+                    {t.url ? <a href={t.url} target="_blank" rel="noopener">{t.name}</a> : t.name}
+                  </span>
+                  <span class="purpose">{t.purpose}</span>
+                  <span class="notes">
+                    {t.verdict && <strong class="verdict">{t.verdict}</strong>}
+                    {t.notes}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+      <p class="empty" hidden>No tools match that. Clear the search or pick another category.</p>
+    </main>
+
+    <footer>
+      <p>
+        Built from the list I keep in a Google Doc. Last pulled {updated}. The data is also at
+        <a href="/tools.json">/tools.json</a>.
+      </p>
+    </footer>
+
+    <script>
+      const rows = [...document.querySelectorAll(".row")];
+      const groups = [...document.querySelectorAll(".group")];
+      const blips = [...document.querySelectorAll(".blip-link")];
+      const slices = [...document.querySelectorAll(".slice")];
+      const empty = document.querySelector(".empty");
+      const readout = document.querySelector(".readout");
+      const q = document.getElementById("q");
+      const state = { q: "", status: "all", cats: new Set() };
+
+      function apply() {
+        const visible = new Set();
+        for (const row of rows) {
+          const cat = row.closest(".group").dataset.category;
+          const ok =
+            (!state.q || row.dataset.search.includes(state.q)) &&
+            (state.status === "all" || (state.status === "tried") === (row.dataset.tried === "1")) &&
+            (state.cats.size === 0 || state.cats.has(cat));
+          row.hidden = !ok;
+          if (ok) visible.add(row.dataset.id);
+        }
+        for (const g of groups) g.hidden = !g.querySelector(".row:not([hidden])");
+        for (const b of blips) b.classList.toggle("dim", !visible.has(b.dataset.id));
+        for (const s of slices) s.classList.toggle("active", state.cats.has(s.dataset.category));
+        empty.hidden = visible.size > 0;
+      }
+
+      q.addEventListener("input", () => {
+        state.q = q.value.trim().toLowerCase();
+        apply();
+      });
+
+      for (const btn of document.querySelectorAll(".status button")) {
+        btn.addEventListener("click", () => {
+          state.status = btn.dataset.status;
+          for (const b of document.querySelectorAll(".status button"))
+            b.setAttribute("aria-checked", String(b === btn));
+          apply();
+        });
+      }
+
+      function toggleCat(cat) {
+        state.cats.has(cat) ? state.cats.delete(cat) : state.cats.add(cat);
+        for (const b of document.querySelectorAll(".cat"))
+          b.setAttribute("aria-pressed", String(state.cats.has(b.dataset.category)));
+        apply();
+      }
+      for (const btn of document.querySelectorAll(".cat")) {
+        btn.addEventListener("click", () => toggleCat(btn.dataset.category));
+      }
+      for (const s of slices) {
+        s.querySelector(".slice-label").addEventListener("click", () => toggleCat(s.dataset.category));
+      }
+
+      // Show the hovered tool's name under the radar.
+      const byId = Object.fromEntries(
+        rows.map((r) => [r.dataset.id, r.querySelector(".name").textContent.trim()])
+      );
+      for (const b of blips) {
+        const show = () => {
+          const tried = b.querySelector(".tried") ? "tried" : "on my radar";
+          readout.textContent = `${byId[b.dataset.id]}, ${tried}`;
+        };
+        b.addEventListener("mouseenter", show);
+        b.addEventListener("focus", show);
+        b.addEventListener("mouseleave", () => (readout.textContent = ""));
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (state.q || state.status !== "all" || state.cats.size) {
+            q.value = "";
+            state.q = "";
+            state.status = "all";
+            state.cats.clear();
+            for (const x of document.querySelectorAll(".status button"))
+              x.setAttribute("aria-checked", String(x.dataset.status === "all"));
+            for (const x of document.querySelectorAll(".cat")) x.setAttribute("aria-pressed", "false");
+            apply();
+          }
+          const row = document.getElementById(`tool-${b.dataset.id}`);
+          const bar = document.querySelector(".controls").offsetHeight;
+          const top = row.getBoundingClientRect().top + window.scrollY - bar - 16;
+          const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+          window.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+          history.replaceState(null, "", `#tool-${b.dataset.id}`);
+          row.classList.remove("flash");
+          void row.offsetWidth;
+          row.classList.add("flash");
+        });
+      }
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --paper: #eef1f4;
+    --panel: #f8fafb;
+    --ink: #18212c;
+    --muted: #5a6675;
+    --line: #c9d1da;
+    --line-soft: #dde3e9;
+    --tried: #2a52d6;
+    --radar: #b97b10;
+    --font: "Schibsted Grotesk", system-ui, sans-serif;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #141a22;
+      --panel: #1a222c;
+      --ink: #e6ebf1;
+      --muted: #97a3b2;
+      --line: #364250;
+      --line-soft: #26303b;
+      --tried: #7d9bff;
+      --radar: #e0a640;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 1.5rem; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 1rem;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration-color: var(--line); text-underline-offset: 0.2em; }
+  a:hover { text-decoration-color: currentColor; }
+  :focus-visible { outline: 2px solid var(--tried); outline-offset: 2px; border-radius: 3px; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+
+  /* Intro + radar */
+  .intro {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 1rem;
+    display: grid;
+    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    gap: 2rem 3rem;
+    align-items: center;
+  }
+  .byline { margin: 0 0 1.25rem; color: var(--muted); font-size: 0.95rem; }
+  .byline a { text-decoration: none; }
+  .byline a:hover { text-decoration: underline; }
+  h1 {
+    margin: 0 0 1rem;
+    font-size: clamp(2.6rem, 5vw, 3.9rem);
+    line-height: 0.98;
+    font-weight: 800;
+    letter-spacing: -0.035em;
+  }
+  .lede { margin: 0 0 1.5rem; font-size: 1.15rem; line-height: 1.45; color: var(--ink); max-width: 30ch; }
+  .legend { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.4rem; font-size: 0.95rem; }
+  .legend li { display: flex; align-items: center; gap: 0.6rem; }
+  .hint { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+  .mark { width: 10px; height: 10px; border-radius: 50%; flex: none; display: inline-block; }
+  .mark.tried { background: var(--tried); }
+  .mark.radar-blip { border: 2px solid var(--radar); background: transparent; }
+
+  .radar { margin: 0; position: relative; }
+  .radar svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .ring { fill: none; stroke: var(--line); stroke-width: 1; }
+  .ring-outer { fill: var(--panel); }
+  .divider { stroke: var(--line-soft); stroke-width: 1; }
+  .slice-hit { fill: transparent; }
+  .slice.active .slice-hit { fill: color-mix(in srgb, var(--tried) 7%, transparent); }
+  .slice-label {
+    font-size: 15px;
+    font-weight: 600;
+    fill: var(--muted);
+    cursor: pointer;
+  }
+  .slice-label:hover, .slice.active .slice-label { fill: var(--ink); }
+  .center-count { font-size: 40px; font-weight: 800; letter-spacing: -0.03em; fill: var(--ink); }
+  .blip { transition: r 120ms ease, opacity 160ms ease; cursor: pointer; }
+  .blip.tried { fill: var(--tried); }
+  .blip.radar-blip { fill: var(--panel); stroke: var(--radar); stroke-width: 2.5; }
+  .blip-link:hover .blip, .blip-link:focus-visible .blip { r: 9; }
+  .blip-link.dim .blip { opacity: 0.15; }
+  .blip-link:focus-visible { outline: none; }
+  .readout {
+    min-height: 1.5em;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.95rem;
+    margin-top: 0.25rem;
+  }
+
+  /* The one moving thing: a single slow sweep across the radar. */
+  .sweep path { fill: color-mix(in srgb, var(--tried) 9%, transparent); }
+  .center-label { font-size: 14px; fill: var(--muted); }
+  @media (prefers-reduced-motion: reduce) {
+    .sweep { display: none; }
+    html { scroll-behavior: auto; }
+  }
+
+  /* Controls */
+  .controls {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 0.85rem max(1.5rem, calc((100vw - 72rem) / 2 + 1.5rem));
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    align-items: center;
+  }
+  .search input {
+    font: inherit;
+    width: min(22rem, 80vw);
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--ink);
+  }
+  .status { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .status button, .cat {
+    font: inherit;
+    font-size: 0.9rem;
+    color: var(--muted);
+    background: transparent;
+    border: 0;
+    padding: 0.45rem 0.8rem;
+    cursor: pointer;
+  }
+  .status button + button { border-left: 1px solid var(--line); }
+  .status button[aria-checked="true"] { background: var(--ink); color: var(--paper); }
+  .cats { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .cat { border: 1px solid var(--line-soft); border-radius: 999px; padding: 0.3rem 0.7rem; }
+  .cat:hover { color: var(--ink); border-color: var(--line); }
+  .cat[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: var(--panel); }
+
+  /* Directory */
+  main { max-width: 72rem; margin: 0 auto; padding: 1rem 1.5rem 3rem; }
+  .group { margin-top: 2.5rem; }
+  h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 0 0 0.5rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+  .group-count { font-size: 0.9rem; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+  .rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--ink); }
+  .row {
+    display: grid;
+    grid-template-columns: 10px 22px minmax(9rem, 13rem) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: center;
+    padding: 0.7rem 0.25rem;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .row[hidden] { display: none; }
+  .row.flash { animation: flash 1.6s ease-out; }
+  @keyframes flash {
+    from { background: color-mix(in srgb, var(--tried) 18%, transparent); }
+    to { background: transparent; }
+  }
+  .logo {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .logo .initial { font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+  .logo img { position: absolute; inset: 1px; width: 18px; height: 18px; background: var(--panel); }
+  .name { font-weight: 600; }
+  .purpose { color: var(--ink); }
+  .notes { color: var(--muted); font-size: 0.92rem; }
+  .verdict { color: var(--ink); font-weight: 600; margin-right: 0.4rem; }
+  .empty { margin-top: 3rem; color: var(--muted); }
+
+  footer {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 1.5rem 1.5rem 3rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+    border-top: 1px solid var(--line);
+  }
+
+  @media (max-width: 860px) {
+    .intro { grid-template-columns: 1fr; padding-top: 2rem; }
+    .lede { max-width: 40ch; }
+    .slice-label { font-size: 24px; }
+    .radar svg { margin: 0 -0.5rem; width: calc(100% + 1rem); }
+    .row {
+      grid-template-columns: 10px 22px minmax(0, 1fr);
+      row-gap: 0.15rem;
+    }
+    .purpose, .notes { grid-column: 3; }
+    .controls { gap: 0.5rem; padding-top: 0.6rem; padding-bottom: 0.6rem; }
+    .search, .search input { width: 100%; }
+    .cats { flex-wrap: nowrap; overflow-x: auto; margin: 0 -1.5rem; padding: 0 1.5rem 0.15rem; scrollbar-width: none; width: calc(100% + 3rem); }
+    .cat { white-space: nowrap; }
+    .notes:empty { display: none; }
+  }
+</style>

@@ -1,0 +1,28 @@
+{
+  "name": "tried-stack-tools",
+  "version": "1.0.0",
+  "description": "Tools I have tried and tools on my radar, built from my Products Tried Google Doc",
+  "scripts": {
+    "dev": "astro dev",
+    "fetch": "node scripts/fetch-doc.mjs",
+    "build": "npm run fetch && astro build",
+    "preview": "astro preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/farooqashar/tried-stack-tools.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/farooqashar/tried-stack-tools/issues"
+  },
+  "homepage": "https://github.com/farooqashar/tried-stack-tools#readme",
+  "dependencies": {
+    "astro": "^7.4.12"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.23.4"
+  }
+}
